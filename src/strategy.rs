@@ -13,13 +13,21 @@ pub trait AllocationStrategy {
 
     /// Get the strategy's name for logging and events.
     fn strategy_name(&self) -> &'static str;
+
+    /// Get the last allocated index if this is a round-robin strategy.
+    fn last_allocated_index(&self) -> Option<usize> {
+        None
+    }
+
+    /// Set the last allocated index if this is a round-robin strategy.
+    fn set_last_allocated_index(&mut self, _index: usize) {}
 }
 
 /// Round-robin allocation strategy.
 /// Distributes sponsorships evenly across available sponsors.
 #[derive(Debug, Default, Clone)]
 pub struct RoundRobinStrategy {
-    last_allocated_index: usize,
+    pub(crate) last_allocated_index: usize,
 }
 
 impl RoundRobinStrategy {
@@ -36,7 +44,8 @@ impl AllocationStrategy for RoundRobinStrategy {
         sponsor_pool: &SponsorPool,
         _new_account_id: Uuid,
     ) -> Result<Uuid, SponsorAllocationError> {
-        let eligible_sponsors = sponsor_pool.get_eligible_sponsors();
+        let mut eligible_sponsors = sponsor_pool.get_eligible_sponsors();
+        eligible_sponsors.sort_by_key(|s| s.account_id);
 
         if eligible_sponsors.is_empty() {
             return Err(SponsorAllocationError::NoSponsorsAvailable);
@@ -54,6 +63,14 @@ impl AllocationStrategy for RoundRobinStrategy {
 
     fn strategy_name(&self) -> &'static str {
         "round_robin"
+    }
+
+    fn last_allocated_index(&self) -> Option<usize> {
+        Some(self.last_allocated_index)
+    }
+
+    fn set_last_allocated_index(&mut self, index: usize) {
+        self.last_allocated_index = index;
     }
 }
 

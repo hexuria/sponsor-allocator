@@ -8,12 +8,12 @@ use uuid::Uuid;
 /// Service aggregate for managing sponsor allocation, pool maintenance,
 /// and processing events synchronously.
 pub struct SponsorService {
-    sponsor_pool: SponsorPool,
-    allocation_strategy: Box<dyn AllocationStrategy + Send + Sync>,
+    pub(crate) sponsor_pool: SponsorPool,
+    pub(crate) allocation_strategy: Box<dyn AllocationStrategy + Send + Sync>,
 
     // Tracks account tier and cycle information
-    account_tiers: HashMap<Uuid, String>,
-    account_cycles: HashMap<Uuid, u32>,
+    pub(crate) account_tiers: HashMap<Uuid, String>,
+    pub(crate) account_cycles: HashMap<Uuid, u32>,
 }
 
 impl SponsorService {

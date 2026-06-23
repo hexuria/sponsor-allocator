@@ -50,8 +50,8 @@ impl SponsorCandidate {
 /// Manages the pool of available sponsors.
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct SponsorPool {
-    sponsors: HashMap<Uuid, SponsorCandidate>,
-    max_pool_size: usize,
+    pub(crate) sponsors: HashMap<Uuid, SponsorCandidate>,
+    pub(crate) max_pool_size: usize,
 }
 
 impl SponsorPool {

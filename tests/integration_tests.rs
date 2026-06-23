@@ -76,7 +76,8 @@ fn test_round_robin_allocation() {
     pool.add_sponsor(SponsorCandidate::new(id3, "King".to_string(), 0))
         .unwrap();
 
-    let eligible = pool.get_eligible_sponsors();
+    let mut eligible = pool.get_eligible_sponsors();
+    eligible.sort_by_key(|s| s.account_id);
     assert_eq!(eligible.len(), 3);
 
     // Test allocations cycle through available sponsors in pool order
