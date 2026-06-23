@@ -29,17 +29,9 @@ impl PgSponsorRepository {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
-}
 
-#[async_trait]
-impl SponsorRepository for PgSponsorRepository {
-    async fn load(&self) -> Result<SponsorService, String> {
-        let mut conn = self
-            .pool
-            .acquire()
-            .await
-            .map_err(|e| format!("Failed to acquire DB connection: {e}"))?;
-
+    /// Load the complete SponsorService state using an existing connection/transaction.
+    pub async fn load_tx(&self, conn: &mut sqlx::PgConnection) -> Result<SponsorService, String> {
         // 1. Fetch global sponsor service state
         let state_row = sqlx::query(
             "SELECT active_strategy, last_allocated_index, max_pool_size \
@@ -130,13 +122,12 @@ impl SponsorRepository for PgSponsorRepository {
         })
     }
 
-    async fn save(&self, service: &SponsorService) -> Result<(), String> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| format!("Failed to begin transaction: {e}"))?;
-
+    /// Save the complete SponsorService state using an existing connection/transaction.
+    pub async fn save_tx(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        service: &SponsorService,
+    ) -> Result<(), String> {
         let strat_name = service.allocation_strategy.strategy_name();
         let last_idx = service
             .allocation_strategy
@@ -157,7 +148,7 @@ impl SponsorRepository for PgSponsorRepository {
         .bind(strat_name)
         .bind(last_idx)
         .bind(max_size)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await
         .map_err(|e| format!("Failed to upsert service state: {e}"))?;
 
@@ -185,20 +176,20 @@ impl SponsorRepository for PgSponsorRepository {
             .bind(acct_id)
             .bind(tier)
             .bind(cycle_count)
-            .execute(&mut *tx)
+            .execute(&mut *conn)
             .await
             .map_err(|e| format!("Failed to upsert account stats: {e}"))?;
         }
 
-        // 3. Clear existing active pool records (the cascading FK deletes or simple clear)
+        // 3. Clear existing active pool records
         sqlx::query("DELETE FROM sponsor_pool")
-            .execute(&mut *tx)
+            .execute(&mut *conn)
             .await
             .map_err(|e| format!("Failed to clear old sponsor pool members: {e}"))?;
 
         // 4. Insert current active pool members
         for candidate in service.sponsor_pool.sponsors.values() {
-            // Ensure a parent stats row exists for this pool member (should already, but let's be fully robust)
+            // Ensure a parent stats row exists for this pool member
             sqlx::query(
                 "INSERT INTO sponsor_account_stats (account_id, tier, cycle_count) \
                  VALUES ($1, $2, $3) \
@@ -210,7 +201,7 @@ impl SponsorRepository for PgSponsorRepository {
             .bind(candidate.account_id)
             .bind(&candidate.tier)
             .bind(candidate.cycle_count as i32)
-            .execute(&mut *tx)
+            .execute(&mut *conn)
             .await
             .map_err(|e| format!("Failed to ensure parent stats for pool member: {e}"))?;
 
@@ -221,15 +212,66 @@ impl SponsorRepository for PgSponsorRepository {
             )
             .bind(candidate.account_id)
             .bind(candidate.sponsored_count as i32)
-            .execute(&mut *tx)
+            .execute(&mut *conn)
             .await
             .map_err(|e| format!("Failed to insert pool member: {e}"))?;
         }
 
+        Ok(())
+    }
+
+    /// Process a matrix cycled event using an existing transaction.
+    pub async fn handle_matrix_cycled_tx(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        account_id: Uuid,
+        matrix_id: Uuid,
+    ) -> Result<(), String> {
+        let mut service = self.load_tx(conn).await?;
+        let event = crate::events::MatrixCycled {
+            account_id,
+            matrix_id,
+        };
+        let _events = service.handle_matrix_cycled(&event);
+        self.save_tx(conn, &service).await?;
+        Ok(())
+    }
+
+    /// Process a flushline graduation event using an existing transaction.
+    pub async fn handle_flushline_graduated_tx(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        account_id: Uuid,
+    ) -> Result<(), String> {
+        let mut service = self.load_tx(conn).await?;
+        let event = crate::events::FlushlineGraduated { account_id };
+        let _events = service.handle_flushline_graduated(&event);
+        self.save_tx(conn, &service).await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl SponsorRepository for PgSponsorRepository {
+    async fn load(&self) -> Result<SponsorService, String> {
+        let mut conn = self
+            .pool
+            .acquire()
+            .await
+            .map_err(|e| format!("Failed to acquire DB connection: {e}"))?;
+        self.load_tx(&mut conn).await
+    }
+
+    async fn save(&self, service: &SponsorService) -> Result<(), String> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| format!("Failed to begin transaction: {e}"))?;
+        self.save_tx(&mut tx, service).await?;
         tx.commit()
             .await
             .map_err(|e| format!("Failed to commit transaction: {e}"))?;
-
         Ok(())
     }
 }
