@@ -1,0 +1,14 @@
+[package]
+name = "sponsor_allocator"
+version = "0.1.0"
+edition = "2021"
+description = "Sponsor allocation engine with Round-Robin and Performance-Based strategies for the Royal Flush Network."
+license = "MIT"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+uuid = { version = "1.0", features = ["v7", "serde", "js"] }
+
+[dev-dependencies]
+serde_json = "1.0"
